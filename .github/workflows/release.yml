@@ -6,13 +6,21 @@ on:
 
 jobs:
   archive-upload:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
-        run: xcodebuild -version
+      - name: Select newest Xcode (need iOS 26 SDK / Xcode 26+)
+        run: |
+          echo "--- installed Xcodes ---"
+          ls -d /Applications/Xcode*.app 2>/dev/null
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting: $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+          echo "--- iOS SDKs ---"
+          xcodebuild -showsdks | grep -i iphoneos || true
 
       - name: Write App Store Connect API key
         env:
