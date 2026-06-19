@@ -11,14 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain (must be a released Xcode / accepted SDK)
-        run: |
-          sudo xcode-select -p
-          xcodebuild -version
-          echo "--- available iOS SDKs ---"
-          xcodebuild -showsdks | grep -i iphoneos || true
-          echo "--- installed Xcodes ---"
-          ls -d /Applications/Xcode*.app 2>/dev/null || true
+      - name: Show toolchain
+        run: xcodebuild -version
 
       - name: Write App Store Connect API key
         env:
@@ -29,7 +23,31 @@ jobs:
           echo "$ASC_KEY_P8_BASE64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
           echo "KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
 
-      - name: Archive (App Store, automatic cloud signing via API key)
+      - name: Set up signing (distribution cert + App Store profiles)
+        env:
+          DIST_P12_BASE64: ${{ secrets.DIST_P12_BASE64 }}
+          DIST_P12_PASSWORD: ${{ secrets.DIST_P12_PASSWORD }}
+          PROFILE_APP_B64: ${{ secrets.PROFILE_APP_B64 }}
+          PROFILE_WIDGET_B64: ${{ secrets.PROFILE_WIDGET_B64 }}
+        run: |
+          KCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KPASS="ci-$RANDOM"
+          security create-keychain -p "$KPASS" "$KCHAIN"
+          security set-keychain-settings -lut 3600 "$KCHAIN"
+          security unlock-keychain -p "$KPASS" "$KCHAIN"
+          security list-keychains -d user -s "$KCHAIN" $(security list-keychains -d user | tr -d '"')
+          echo "$DIST_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KCHAIN" -P "$DIST_P12_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPASS" "$KCHAIN" >/dev/null
+          echo "--- identities in build keychain ---"
+          security find-identity -v -p codesigning "$KCHAIN"
+          PROF_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROF_DIR"
+          echo "$PROFILE_APP_B64" | base64 --decode > "$PROF_DIR/app.mobileprovision"
+          echo "$PROFILE_WIDGET_B64" | base64 --decode > "$PROF_DIR/widget.mobileprovision"
+          echo "installed profiles:"; ls -la "$PROF_DIR"
+
+      - name: Archive
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -45,13 +63,9 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM=W7Q885Q59C \
-            CODE_SIGN_STYLE=Automatic \
             archive
 
-      - name: Export IPA
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - name: Export IPA (manual distribution signing)
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -59,7 +73,12 @@ jobs:
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>W7Q885Q59C</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.shimondeitel.pulse</key><string>Pulse AppStore CI</string>
+              <key>com.shimondeitel.pulse.widgets</key><string>Pulse Widget AppStore CI</string>
+            </dict>
             <key>destination</key><string>export</string>
             <key>uploadSymbols</key><true/>
           </dict></plist>
@@ -67,11 +86,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/pulse.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
           ls -la "$RUNNER_TEMP/export"
 
       - name: Upload to App Store Connect
