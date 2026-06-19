@@ -502,7 +502,7 @@ extension DailyTask {
         let justCompletedGoal = complete ? (goal?.markCompletedIfAllStepsDone() ?? false) : false
         try? context.save()
         if complete, justCompletedGoal {
-            AdaptiveNotificationScheduler.handleGoalCompletion(goalID: goalID)
+            Task { @MainActor in AdaptiveNotificationScheduler.handleGoalCompletion(goalID: goalID) }
         }
         return true
     }

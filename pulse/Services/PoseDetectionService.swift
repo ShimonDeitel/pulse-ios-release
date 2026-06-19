@@ -1059,7 +1059,7 @@ actor HumanPoseDetector {
         let magB = sqrt(vb.x * vb.x + vb.y * vb.y)
         guard magA > 0.0001, magB > 0.0001 else { return nil }
         let cosAng = max(-1, min(1, dot / (magA * magB)))
-        return acos(cosAng) * 180.0 / .pi
+        return acos(Double(cosAng)) * 180.0 / Double.pi
     }
 
     private func computeHints(exercise: String,
