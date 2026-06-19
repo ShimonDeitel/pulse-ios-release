@@ -1,0 +1,18 @@
+{
+  "name": "pulse-ai-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that proxies DeepSeek AI for Pulse: holds the shared key, meters each user to a monthly cap, and hard-stops at a global pot ceiling.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "check": "node --check src/index.js && node --check src/ledger.js && node --check src/apple.js && node --check src/jwt.js && node --check src/pricing.js",
+    "test": "npm run check && node test/ledger.harness.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

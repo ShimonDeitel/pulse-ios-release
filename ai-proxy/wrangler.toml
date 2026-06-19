@@ -1,0 +1,78 @@
+name = "pulse-ai-proxy"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Non-secret config. Override per-environment if you ever add staging/prod.
+#   POT_TOTAL_USD     – the lump sum you've "deposited" into the AI budget. The
+#                       proxy refuses to spend past this. Raise it with
+#                       `POST /admin/topup` (no redeploy needed) or by bumping
+#                       this value (redeploy re-seeds only on first run).
+#   DAILY_CAP_USD     – hard GLOBAL ceiling on spend per UTC day (a safety net on
+#                       TOP of the lifetime pot). A bad day (abuse / runaway loop)
+#                       can bleed at most this much before it self-heals at
+#                       midnight UTC. "0" disables. Change needs a redeploy.
+#   PER_USER_CAP_USD  – MONTHLY AI ceiling per paying user ($3.00). Paced across
+#                       the month: ~1/daysInMonth unlocks per day with carry-
+#                       forward (unspent days roll onto the rest of the month);
+#                       hitting today's accrued slice → "resets tomorrow". This is
+#                       the per-user budget, distinct from DAILY_CAP_USD (the
+#                       global all-users safety net).
+#   APPLE_BUNDLE_ID   – must equal the app's bundle id; Apple identity tokens are
+#                       rejected unless their `aud` matches this exactly.
+#   MAX_OUTPUT_TOKENS – hard server-side clamp on max_tokens to bound per-call cost.
+#   UPSTREAM_MODEL    – the ONE Gemini model every call actually runs on. The app
+#                       still sends a legacy "deepseek-v4-flash" name (kept in
+#                       ALLOWED_MODELS for back-compat); the proxy maps it onto this
+#                       and forwards + prices by it. Swap to "gemini-2.5-flash" for
+#                       higher quality at ~6x the output price (redeploy needed).
+#                       Must have a PRICING row in src/pricing.js.
+#   ALLOWED_MODELS    – comma-separated names a caller MAY request. The requested
+#                       name is only an allow-gate; the real model run is
+#                       UPSTREAM_MODEL. Keeps the legacy DeepSeek names so already-
+#                       installed app builds keep working with no update.
+#   RATE_LIMIT_PER_MIN– max metered requests per user per 60s (volume-abuse guard,
+#                       independent of the $ cap). "0" disables it.
+#   MAX_MESSAGES      – reject a /v1/chat body with more than this many messages.
+#   MAX_PROMPT_BYTES  – reject a /v1/chat body whose messages serialize larger than
+#                       this — caps input cost-amplification. 262144 = 256 KB.
+# ─────────────────────────────────────────────────────────────────────────────
+[vars]
+POT_TOTAL_USD = "10"
+DAILY_CAP_USD = "2"
+PER_USER_CAP_USD = "3.00"
+APPLE_BUNDLE_ID = "com.shimondeitel.pulse"
+MAX_OUTPUT_TOKENS = "16384"
+UPSTREAM_MODEL = "gemini-2.5-flash-lite"
+ALLOWED_MODELS = "deepseek-v4-pro,deepseek-v4-flash,gemini-2.5-flash-lite,gemini-2.5-flash"
+RATE_LIMIT_PER_MIN = "120"
+MAX_MESSAGES = "200"
+MAX_PROMPT_BYTES = "1572864"
+# Anonymous / device free-tier sessions (Android — no Sign in with Apple). When
+# "1", POST /v1/session {anonymous:true,deviceId} mints a tier:"anon" session that
+# is hard-walled to the FREE providers (never the paid pot). Issuance is rate-
+# limited per client IP. Leave unset/"0" to disable (the branch returns 404).
+ANON_SESSIONS_ENABLED = "1"
+ANON_SESSION_TTL_SECONDS = "2592000"
+ANON_ISSUE_PER_HOUR_PER_IP = "10"
+
+# Secrets are NOT stored here. Set them once with:
+#   wrangler secret put GEMINI_API_KEY            # the shared Google Gemini key
+#   wrangler secret put SESSION_SIGNING_SECRET    # random 32+ byte string
+#   wrangler secret put ADMIN_SECRET              # protects /admin/* endpoints
+# (A legacy DEEPSEEK_API_KEY secret may still be set; it is now unused.)
+
+# Strongly-consistent ledger (global pot + per-user monthly meters). SQLite-backed
+# Durable Objects are serialized per instance, so the reserve→settle counter math
+# can never race — that's what makes the pot a HARD ceiling.
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "Ledger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Ledger"]
+
+[observability]
+enabled = true

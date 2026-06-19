@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Deployed AI-proxy Worker base URL, injected from the PULSE_PROXY_BASE_URL
+	     build setting (default empty = proxy disabled). Set it for a release
+	     archive — no source edit, and never a secret (public Worker URL only). -->
+	<key>PulseProxyBaseURL</key>
+	<string>$(PULSE_PROXY_BASE_URL)</string>
+	<!-- Export compliance: the app uses only standard HTTPS/TLS (and Apple's
+	     own CryptoKit/Keychain) — which qualifies for the standard exemption.
+	     Declaring false here means App Store / TestFlight uploads never stop to
+	     ask the "does your app use encryption?" question. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- Custom URL scheme so shared "quote notes" (pulse://quote?q=…) re-open
+	     in Pulse and save to the recipient's own Saved Quotes. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.shimondeitel.pulse.quote</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pulse</string>
+			</array>
+		</dict>
+	</array>
+	<!-- CloudKit cross-device sync delivers changes via APNs silent pushes.
+	     Without this, changes on one device won't appear on others until
+	     the user brings the app to the foreground. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>
