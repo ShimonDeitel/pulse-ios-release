@@ -444,6 +444,9 @@ final class MentorAgent: @unchecked Sendable {
     @MainActor
     private func createGoal(args: [String: Any]) -> (String, String?) {
         let ctx = PersistenceController.shared.container.viewContext
+        guard SubscriptionManager.shared.canCreateGoal(in: ctx) else {
+            return (Self.jsonString(["ok": false, "error": "You have reached the free plan limit of 1 active goal. Upgrade to Pro for unlimited goals."]), nil)
+        }
         guard let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
             return (Self.errJSON("A title is required to create a goal."), nil)
         }
