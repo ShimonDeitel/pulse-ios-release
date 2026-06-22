@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreData
 
 // MARK: - Tier model
 // 2 tiers:
@@ -213,5 +214,26 @@ class SubscriptionManager {
     func canCreateGoal(currentCount: Int) -> Bool {
         if isPro { return true }
         return currentCount < currentTier.maxGoals
+    }
+
+    /// Number of currently-active goals in `context`. Treats a nil/empty status as
+    /// active (matching `Goal.statusEnum`'s coercion) so the cap can't be bypassed
+    /// by legacy rows. Mirrors the count used in `GoalInputViewModel.saveGoal`.
+    func activeGoalCount(in context: NSManagedObjectContext) -> Int {
+        let request = NSFetchRequest<Goal>(entityName: "Goal")
+        request.predicate = NSPredicate(
+            format: "status == %@ OR status == %@ OR status == nil",
+            GoalStatus.active.rawValue, ""
+        )
+        return (try? context.count(for: request)) ?? 0
+    }
+
+    /// Authoritative save-site backstop shared by every goal-creation view: Pro is
+    /// unlimited; Free is capped at one active goal. Returns false when a Free user
+    /// is already at the cap, so the caller presents the paywall instead of
+    /// creating another active goal. (AI is free for everyone — this gates only
+    /// the goal COUNT.)
+    func canCreateGoal(in context: NSManagedObjectContext) -> Bool {
+        canCreateGoal(currentCount: activeGoalCount(in: context))
     }
 }
