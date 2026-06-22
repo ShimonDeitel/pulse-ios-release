@@ -26,6 +26,10 @@ struct MasterSkillGoalView: View {
     @State private var pendingGoalID: NSManagedObjectID? = nil
     @State private var aiErrorDetail: String? = nil
     @State private var didCreateGoal: Bool = false
+    /// Set when creation is blocked by the Free 1-active-goal cap, so the paywall
+    /// is presented instead of a second active goal being created. (AI is free;
+    /// Pro = unlimited goals.)
+    @State private var showingUpgrade: Bool = false
 
     enum ProficiencyLevel: String, CaseIterable, Identifiable {
         case none, beginner, intermediate, conversational, advanced, fluent
@@ -107,6 +111,7 @@ struct MasterSkillGoalView: View {
             }
             .animation(.easeInOut(duration: 0.25), value: showingAILoader)
             .animation(.easeInOut(duration: 0.25), value: showingFailureDialog)
+            .sheet(isPresented: $showingUpgrade) { UpgradeView() }
             // Restore any saved Master-a-Skill draft so backing out and
             // reopening doesn't lose the skill name / levels / sliders / style.
             // Only override a default when a saved value actually exists.
@@ -361,6 +366,16 @@ struct MasterSkillGoalView: View {
     /// Blocking AI creation flow — see MakeMoneyGoalView for the rationale.
     private func createGoal() {
         guard canCreate, !isCreating else { return }
+
+        // Authoritative goal-cap backstop at the save site. AI is free for
+        // everyone; this enforces only the Free 1-active-goal cap (Pro = unlimited
+        // goals). A Free user already at the cap gets the paywall, not a 2nd goal.
+        guard SubscriptionManager.shared.canCreateGoal(in: viewContext) else {
+            PulseHaptics.medium()
+            showingUpgrade = true
+            return
+        }
+
         isCreating = true
         PulseHaptics.medium()
 
