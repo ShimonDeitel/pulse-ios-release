@@ -19,6 +19,10 @@ struct PhotoTransformationView: View {
     @State private var dismissed = false
     @State private var showingCurrentCamera = false
     @State private var showingGoalCamera = false
+    /// Set when creation is blocked by the Free 1-active-goal cap, so the paywall
+    /// is presented instead of a second active goal being created. (AI is free;
+    /// Pro = unlimited goals.)
+    @State private var showingUpgrade = false
 
     // New inputs per spec
     @State private var trainingStyle: TrainingStyle = .gym
@@ -101,6 +105,7 @@ struct PhotoTransformationView: View {
             .onChange(of: targetWeeks)   { persistDraftFields() }
             .sheet(isPresented: $showingCurrentCamera) { CameraImagePicker(image: $currentImage) }
             .sheet(isPresented: $showingGoalCamera)    { CameraImagePicker(image: $goalImage) }
+            .sheet(isPresented: $showingUpgrade) { UpgradeView() }
             // Resume a saved Transformation draft: restore its before/after photos
             // AND its scalar inputs (target weeks, current weight + unit, style).
             .onAppear {
@@ -387,6 +392,14 @@ struct PhotoTransformationView: View {
             PulseHaptics.error()
             return
         }
+        // Goal-cap gate BEFORE spending an AI call. AI is free for everyone; this
+        // enforces only the Free 1-active-goal cap (Pro = unlimited goals). A Free
+        // user already at the cap gets the paywall, not a 2nd goal.
+        guard SubscriptionManager.shared.canCreateGoal(in: viewContext) else {
+            PulseHaptics.medium()
+            showingUpgrade = true
+            return
+        }
         PulseHaptics.medium()
         Task {
             await service.generatePlan(
@@ -410,6 +423,17 @@ struct PhotoTransformationView: View {
         // swipe) or we've already created the goal, do NOT silently auto-create a
         // goal behind their back.
         guard !dismissed, !didCreateGoal else { return }
+
+        // Authoritative goal-cap backstop at the save site (mirrors the early gate
+        // in startGeneration). AI is free for everyone; this enforces only the Free
+        // 1-active-goal cap (Pro = unlimited goals). A Free user already at the cap
+        // gets the paywall, not a 2nd goal.
+        guard SubscriptionManager.shared.canCreateGoal(in: viewContext) else {
+            PulseHaptics.medium()
+            showingUpgrade = true
+            return
+        }
+
         let goal = Goal(context: viewContext)
         goal.id = UUID()
         goal.title = "Transformation"
