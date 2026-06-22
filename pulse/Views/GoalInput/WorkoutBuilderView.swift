@@ -48,6 +48,10 @@ struct WorkoutBuilderView: View {
     // True once we've attempted a restore this lifetime, so a sheet re-appear
     // mid-edit never clobbers live @State with a stale snapshot.
     @State private var hasRestored = false
+    /// Set when saving is blocked by the Free 1-active-goal cap, so the paywall is
+    /// presented instead of a second active goal being created. This builder is
+    /// free of AI cost, but the goal-COUNT cap still applies (Pro = unlimited).
+    @State private var showingUpgrade = false
 
     private var canSave: Bool { days.contains { !$0.exercises.isEmpty } }
 
@@ -145,6 +149,7 @@ struct WorkoutBuilderView: View {
                     editTarget = nil
                 }
             }
+            .sheet(isPresented: $showingUpgrade) { UpgradeView() }
             .onAppear { restoreDraftIfPresent() }
             .onChange(of: planName) { persistDraft() }
             .onChange(of: weeks) { persistDraft() }
@@ -247,6 +252,16 @@ struct WorkoutBuilderView: View {
     private func saveManualPlan() {
         let usableDays = days.filter { !$0.exercises.isEmpty }
         guard !usableDays.isEmpty else { return }
+
+        // Authoritative goal-cap backstop at the save site. This builder costs no
+        // AI, but the Free 1-active-goal cap still applies by goal COUNT (Pro =
+        // unlimited). A Free user already at the cap gets the paywall, not a 2nd
+        // goal.
+        guard SubscriptionManager.shared.canCreateGoal(in: viewContext) else {
+            PulseHaptics.medium()
+            showingUpgrade = true
+            return
+        }
 
         let workouts: [DailyWorkout] = usableDays.enumerated().map { idx, day in
             DailyWorkout(
